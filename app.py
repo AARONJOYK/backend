@@ -175,6 +175,42 @@ def insecure_upload():
 
     return jsonify({'message': 'File uploaded successfully'})
 
+# Maintainability vulnerabilities (new ones)
+@app.route('/bad-code', methods=['POST'])
+def bad_code_example():
+    # Repetitive code logic without abstraction
+    name = request.get_json().get('name')
+    if name == 'example':
+        # Replicating same logic in multiple places
+        return jsonify({'response': 'example case'})
+    elif name == 'test':
+        # Same logic repeated again
+        return jsonify({'response': 'test case'})
+    else:
+        return jsonify({'response': 'unknown case'})
+
+# Hard to follow logic due to complex string manipulation and nested logic
+@app.route('/complex-logic', methods=['GET'])
+def complex_logic():
+    data = request.args.get('data')
+    try:
+        # Poor error handling, nested logic
+        if data == 'start':
+            return jsonify({'message': 'Starting'})
+        elif data == 'stop':
+            return jsonify({'message': 'Stopping'})
+        else:
+            return jsonify({'message': 'Unknown command'})
+    except Exception as e:
+        return jsonify({'error': 'Error occurred', 'details': str(e)}), 500
+
+# Misleading function names that don't describe what the function does
+@app.route('/incorrect-function-name', methods=['POST'])
+def incorrect_function_name():
+    # Function name doesn't match functionality
+    return jsonify({'message': 'This function does not perform the intended task'})
+
+
 if __name__ == '__main__':
     if not os.path.exists(app.config['UPLOAD_FOLDER']):
         os.makedirs(app.config['UPLOAD_FOLDER'])
