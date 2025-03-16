@@ -289,3 +289,65 @@ def get_courses():
 
             # Get all teachers at once to avoid N+1 query problem
             teachers = {u.id: u.username for u in User.query.filter_by(
+                role='teacher').all()}
+
+            return jsonify([{
+                'id': c.id,
+                'title': c.title,
+                'description': c.description,
+                'teacher': teachers.get(c.teacher_id)
+            } for c in courses if c.id in enrolled_course_ids])
+
+    except jwt.InvalidTokenError:
+        return jsonify({'message': 'Invalid token'}), 401
+
+# Vulnerability: No validation for file types or path sanitization
+
+
+@app.route('/api/submit-assignment', methods=['POST'])
+def submit_assignment():
+    token = request.headers.get('Authorization', '').split('Bearer ')[-1]
+
+    try:
+        payload = jwt.decode(
+            token, app.config['SECRET_KEY'], algorithms=['HS256'])
+        user = User.query.get(payload['user_id'])
+
+        if not user or user.role != 'student':
+            return jsonify({'message': 'Unauthorized'}), 403
+
+        file = request.files.get('file')
+
+        if file:
+            filename = secure_filename(file.filename)
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(file_path)
+
+            submission = Submission(
+                student_id=user.id,
+                course_id=request.form['course_id'],
+                file_path=file_path
+            )
+
+            db.session.add(submission)
+            db.session.commit()
+
+            return jsonify({'message': 'Assignment submitted successfully'})
+
+    except jwt.InvalidTokenError:
+        return jsonify({'message': 'Invalid token'}), 401
+
+    return jsonify({'message': 'No file provided'}), 400
+
+
+@app.route('/api/submit-assignment', methods=['GET'])
+def get_assignment():
+    submission_id = request.args.get('id')
+    # Vulnerability: No user verification check before downloading files
+    submission = Submission.query.get(submission_id)
+    if submission:
+        return send_file(submission.file_path)
+    return jsonify({'message': 'Submission not found'}), 404
+
+if __name__ == '__main__':
+    app.run(debug=True)
