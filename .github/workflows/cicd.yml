@@ -1,11 +1,11 @@
-name: Backend CI/CD Pipeline 
+name: Backend CI/CD Pipeline
 
 on:
   push:
-    branches: [main]
+    branches: [main]  # Change to your branch name if needed
 
 env:
-  DOCKER_BACKEND_IMAGE: ${{ secrets.DOCKER_USERNAME }}/backend
+  DOCKER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/lms-backend
   SERVER_IP: ${{ secrets.SERVER_IP }}
   SERVER_USER: ${{ secrets.SERVER_USER }}
 
@@ -16,7 +16,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Docker
+      - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Login to DockerHub
@@ -32,8 +32,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ env.DOCKER_BACKEND_IMAGE }}:latest
-            ${{ env.DOCKER_BACKEND_IMAGE }}:${{ github.sha }}
+            ${{ env.DOCKER_IMAGE }}:latest
+            ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
 
   deploy:
     needs: build-and-push
@@ -48,7 +48,14 @@ jobs:
 
       - name: Deploy to server
         run: |
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} '
-            docker-compose pull backend
-            docker-compose up -d --force-recreate backend
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} '
+            echo "Stopping existing backend container..."
+            sudo docker-compose down
+            echo "Removing old images..."
+            sudo docker system prune -af
+            echo "Pulling new backend image..."
+            sudo docker-compose pull backend
+            echo "Starting new backend container..."
+            sudo docker-compose up -d --force-recreate backend
+            echo "Backend deployment complete!"
           '
