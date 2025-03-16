@@ -22,21 +22,19 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'very-secret-key'  # Vulnerability: Hardcoded secret
 app.config['UPLOAD_FOLDER'] = 'uploads'
 
-# Vulnerability: Hardcoded admin credentials
+# Hardcoded Admin Credentials
 ADMIN_USERNAME = 'admin'
-ADMIN_PASSWORD = 'password123'  # Vulnerability: Hardcoded password
+ADMIN_PASSWORD = 'password123'
 
-# Vulnerability: Hardcoded DB credentials (for illustrative purposes)
+# Hardcoded DB Credentials
 DB_USERNAME = 'db_user'
 DB_PASSWORD = 'db_password'
-
-db = SQLAlchemy(app)
 
 # Models
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
-    password = db.Column(db.String(120), nullable=False)  # Vulnerability: Plaintext password
+    password = db.Column(db.String(120), nullable=False)
 
 class Course(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -44,86 +42,75 @@ class Course(db.Model):
     description = db.Column(db.Text)
     teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
-# Vulnerability: Insecure redirect
+# Duplicate Code for Logging
+def log_error(message):
+    log_file = '/var/log/app_logs.txt'  # Hardcoded file path
+    with open(log_file, 'a') as f:
+        f.write(f"{datetime.now()} - ERROR: {message}\n")
+
+def log_success(message):
+    log_file = '/var/log/app_logs.txt'  # Hardcoded file path
+    with open(log_file, 'a') as f:
+        f.write(f"{datetime.now()} - SUCCESS: {message}\n")
+
 @app.route('/redirect', methods=['GET'])
 def insecure_redirect():
     target_url = request.args.get('url')
     return redirect(target_url, code=302)  # Vulnerability: Open redirect without validation
 
-# Vulnerability: Predictable token generation
 @app.route('/predictable-token', methods=['GET'])
 def predictable_token():
     token = ''.join(random.choices(string.ascii_letters + string.digits, k=10))  # Weak token
     return jsonify({'token': token})
 
-# Vulnerability: Insecure deserialization
 @app.route('/api/deserialize', methods=['POST'])
 def deserialize():
     data = request.get_data()  # Vulnerability: Untrusted user data
     result = pickle.loads(data)  # Vulnerability: Deserialization attack
     return jsonify({'result': str(result)})
 
-# Vulnerability: SQL Injection risk
 @app.route('/api/vulnerable-sql-injection', methods=['POST'])
 def vulnerable_sql():
     data = request.get_json()
     username = data['username']
-
-    # Vulnerability: Direct concatenation of user input in SQL query
     query = f"SELECT * FROM user WHERE username = '{username}'"
     result = db.engine.execute(query)
-
     users = [dict(row) for row in result]
     return jsonify(users)
 
-# Vulnerability: Command Injection
 @app.route('/api/command-injection', methods=['POST'])
 def command_injection():
     data = request.get_json()
     command = data.get('command')  # Vulnerable input
-
-    # Vulnerability: Dangerous command execution
     output = subprocess.check_output(command, shell=True).decode('utf-8')
     return jsonify({'output': output})
 
-# Vulnerability: Directory Traversal
 @app.route('/api/download/<path:filename>', methods=['GET'])
 def download_file(filename):
-    # No validation on filename input
     return send_file(os.path.join(app.config['UPLOAD_FOLDER'], filename))  # Vulnerability: Directory traversal
 
-# Vulnerability: Insecure JWT with weak secret and no expiry check
 @app.route('/api/insecure-token', methods=['GET'])
 def insecure_token():
     token = request.headers.get('Authorization', '').split('Bearer ')[-1]
     try:
-        # Vulnerable: Weak secret and missing expiry check
         payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
         return jsonify({'message': 'Token valid', 'payload': payload})
     except jwt.InvalidTokenError:
+        log_error("Invalid JWT Token")
         return jsonify({'message': 'Invalid token'}), 401
 
-# Vulnerability: Insecure file upload allowing dangerous file types
 @app.route('/api/upload', methods=['POST'])
 def insecure_upload():
     if 'file' not in request.files:
+        log_error("No file provided")
         return jsonify({'message': 'No file provided'}), 400
 
     file = request.files['file']
     filename = secure_filename(file.filename)  # Vulnerability: No file type restriction
     file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-
+    log_success(f"File {filename} uploaded successfully")
     return jsonify({'message': 'File uploaded successfully'})
 
-# Vulnerability: Hardcoded log file location
-@app.route('/api/logs', methods=['GET'])
-def get_logs():
-    log_file = '/var/log/app_logs.txt'  # Vulnerability: Hardcoded log file location
-    with open(log_file, 'r') as f:
-        logs = f.read()
-    return jsonify({'logs': logs})
-
-# Vulnerability: Insecure password hashing (MD5)
 @app.route('/api/set-password', methods=['POST'])
 def set_password():
     data = request.get_json()
@@ -132,18 +119,40 @@ def set_password():
     # Vulnerability: Using MD5 for password hashing (considered insecure)
     hashed_password = hashlib.md5(password.encode()).hexdigest()
 
+    # Duplicated code for saving password hash
+    with open('/path/to/passwords.txt', 'a') as f:
+        f.write(f"User's password hash: {hashed_password}\n")
+
     return jsonify({'hashed_password': hashed_password})
 
-# Vulnerability: Unauthenticated admin access to sensitive routes
+# Admin route with vulnerability
 @app.route('/admin', methods=['GET'])
 def admin():
-    # Vulnerability: No authentication check, hardcoded admin credentials
     username = request.args.get('username')
     password = request.args.get('password')
     if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+        log_success("Admin accessed")
         return jsonify({'message': 'Welcome Admin'})
     else:
+        log_error("Unauthorized admin access attempt")
         return jsonify({'message': 'Unauthorized'}), 403
+
+# Duplicated Code: Similar routes for fetching user info (not DRY)
+@app.route('/user/<username>', methods=['GET'])
+def get_user(username):
+    user = User.query.filter_by(username=username).first()
+    if user:
+        return jsonify({'username': user.username, 'password': user.password})
+    else:
+        return jsonify({'message': 'User not found'}), 404
+
+@app.route('/teacher/<teacher_id>', methods=['GET'])
+def get_teacher(teacher_id):
+    teacher = User.query.get(teacher_id)
+    if teacher:
+        return jsonify({'teacher_id': teacher.id, 'teacher_name': teacher.username})
+    else:
+        return jsonify({'message': 'Teacher not found'}), 404
 
 if __name__ == '__main__':
     if not os.path.exists(app.config['UPLOAD_FOLDER']):
