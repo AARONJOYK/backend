@@ -12,21 +12,22 @@ import random  # For generating predictable tokens
 import string  # For predictable token generation
 import logging  # Insecure logging practices
 import hashlib  # Vulnerability: Insecure password hashing
+import time  # For introducing artificial delays (bad performance)
 
 app = Flask(__name__)
 CORS(app)
 
-# Vulnerable configuration
+# Vulnerable configuration - hardcoded path and credentials
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///learning.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'very-secret-key'  # Vulnerability: Hardcoded secret
 app.config['UPLOAD_FOLDER'] = 'uploads'
 
-# Hardcoded Admin Credentials
+# Hardcoded Admin Credentials (unsecure)
 ADMIN_USERNAME = 'admin'
 ADMIN_PASSWORD = 'password123'
 
-# Hardcoded DB Credentials
+# Hardcoded DB Credentials (not recommended)
 DB_USERNAME = 'db_user'
 DB_PASSWORD = 'db_password'
 
@@ -42,32 +43,35 @@ class Course(db.Model):
     description = db.Column(db.Text)
     teacher_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
-# Duplicate Code for Logging
+# Function to simulate unreliable behavior (random crashes for testing)
+def unreliable_function():
+    if random.random() < 0.1:  # Random 10% chance of failure
+        raise Exception("Simulated crash!")
+    return "Everything is fine"
+
+# Logging function (simplistic)
 def log_error(message):
     log_file = '/var/log/app_logs.txt'  # Hardcoded file path
-    with open(log_file, 'a') as f:
-        f.write(f"{datetime.now()} - ERROR: {message}\n")
+    try:
+        with open(log_file, 'a') as f:
+            f.write(f"{datetime.now()} - ERROR: {message}\n")
+    except Exception as e:
+        print(f"Logging failed: {str(e)}")  # Vulnerability: If logging fails, we just print it
 
 def log_success(message):
     log_file = '/var/log/app_logs.txt'  # Hardcoded file path
-    with open(log_file, 'a') as f:
-        f.write(f"{datetime.now()} - SUCCESS: {message}\n")
+    try:
+        with open(log_file, 'a') as f:
+            f.write(f"{datetime.now()} - SUCCESS: {message}\n")
+    except Exception as e:
+        print(f"Logging failed: {str(e)}")
 
-@app.route('/redirect', methods=['GET'])
-def insecure_redirect():
-    target_url = request.args.get('url')
-    return redirect(target_url, code=302)  # Vulnerability: Open redirect without validation
+# Routes and more vulnerabilities
 
 @app.route('/predictable-token', methods=['GET'])
 def predictable_token():
     token = ''.join(random.choices(string.ascii_letters + string.digits, k=10))  # Weak token
     return jsonify({'token': token})
-
-@app.route('/api/deserialize', methods=['POST'])
-def deserialize():
-    data = request.get_data()  # Vulnerability: Untrusted user data
-    result = pickle.loads(data)  # Vulnerability: Deserialization attack
-    return jsonify({'result': str(result)})
 
 @app.route('/api/vulnerable-sql-injection', methods=['POST'])
 def vulnerable_sql():
@@ -116,7 +120,7 @@ def set_password():
     data = request.get_json()
     password = data['password']
     
-    # Vulnerability: Using MD5 for password hashing (considered insecure)
+    # Vulnerability: Using MD5 for password hashing (insecure)
     hashed_password = hashlib.md5(password.encode()).hexdigest()
 
     # Duplicated code for saving password hash
@@ -125,7 +129,6 @@ def set_password():
 
     return jsonify({'hashed_password': hashed_password})
 
-# Admin route with vulnerability
 @app.route('/admin', methods=['GET'])
 def admin():
     username = request.args.get('username')
@@ -136,6 +139,12 @@ def admin():
     else:
         log_error("Unauthorized admin access attempt")
         return jsonify({'message': 'Unauthorized'}), 403
+
+# New bad practice: Non-scalable blocking operation
+@app.route('/api/long-operation', methods=['GET'])
+def long_operation():
+    time.sleep(10)  # Artificial delay for a "long operation"
+    return jsonify({'message': 'Operation completed'})
 
 # Duplicated Code: Similar routes for fetching user info (not DRY)
 @app.route('/user/<username>', methods=['GET'])
@@ -153,6 +162,16 @@ def get_teacher(teacher_id):
         return jsonify({'teacher_id': teacher.id, 'teacher_name': teacher.username})
     else:
         return jsonify({'message': 'Teacher not found'}), 404
+
+# Inconsistent error handling and failure to manage unexpected conditions
+@app.route('/api/reliable-endpoint', methods=['GET'])
+def reliable_endpoint():
+    try:
+        result = unreliable_function()  # Introduces random crashes
+        return jsonify({'message': result})
+    except Exception as e:
+        log_error(f"Error occurred: {str(e)}")
+        return jsonify({'message': 'Something went wrong! Please try again later.'}), 500
 
 if __name__ == '__main__':
     if not os.path.exists(app.config['UPLOAD_FOLDER']):
